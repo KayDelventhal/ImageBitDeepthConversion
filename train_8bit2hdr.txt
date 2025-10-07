@@ -1,0 +1,65 @@
+# === Train with AMP, resumable, logs, checkpoints & metrics (HDR-aware) ===
+# metrics-mode choices: linear_pct99 (default), log, tm, linear_clip1
+# tip: keep --metrics-hi-pct around 99–99.9 to include bright highlights without a single pixel dominating
+python .\train_8bit2hdr.py --ldr .\data\train\ldr --hdr .\data\train\hdr `
+  --epochs 20 --batch-size 2 --val-batch-size 2 --amp --workers 0 --tb `
+  --metrics-batches 2 --metrics-mode linear_pct99 --metrics-hi-pct 99.5 `
+  --tag base_e20_b2
+
+python .\train_8bit2hdr.py --ldr .\data\train\ldr --hdr .\data\train\hdr `
+  --tile 256 --batch-size 4 --amp --workers 2 --tb `
+  --metrics-batches 2 --metrics-mode linear_pct99 --metrics-hi-pct 99.5 `
+  --tag tile256_b4
+
+python .\train_8bit2hdr.py --ldr .\data\train\ldr --hdr .\data\train\hdr `
+  --tile 512 --batch-size 1 --accum 2 --amp --channels-last --workers 2 --tb `
+  --metrics-batches 2 --metrics-mode linear_pct99 --metrics-hi-pct 99.5 `
+  --tag tile512_b1_acc2
+
+
+# === Resume from best (continue training) ===
+python .\train_8bit2hdr.py --ldr .\data\train\ldr --hdr .\data\train\hdr `
+  --resume best --epochs 40 --start-epoch 20 --amp --workers 0 --tb `
+  --metrics-batches 2 --metrics-mode linear_pct99 --metrics-hi-pct 99.5 `
+  --tag resume_best
+
+# === Early stop if no improvement for 5 epochs ===
+python .\train_8bit2hdr.py --ldr .\data\train\ldr --hdr .\data\train\hdr `
+  --patience 5 --amp --workers 0 --tb `
+  --metrics-batches 2 --metrics-mode linear_pct99 --metrics-hi-pct 99.5 `
+  --tag earlystop5
+
+
+# === Stop gracefully while running (create STOP_TRAINING flag file) ===
+New-Item -ItemType File -Path .\STOP_TRAINING -Force
+
+# === Clear stale lock if needed ===
+Remove-Item -Force .\TRAINING.LOCK
+
+
+# === Inference only (writes EXRs to output folder) ===
+python .\train_8bit2hdr.py --ldr .\data\test\ldr --hdr .\data\test\hdr `
+  --infer-only --resume best --infer-out .\data\output --workers 0
+
+# (metrics/TensorBoard are only meaningful during training; omitted above)
+
+
+# === Optional: prepare PNGs from EXRs (helper step) ===
+python .\train_8bit2hdr.py --prep-exr-to-ldr --prep-src .\data\train\hdr --prep-dst .\data\train\ldr
+
+
+# === Tiny train just to produce a checkpoint (if you don’t have one yet) ===
+python .\train_8bit2hdr.py --ldr .\data\train\ldr --hdr .\data\train\hdr `
+  --tile 256 --epochs 3 --batch-size 2 --amp --workers 0 --tb `
+  --metrics-batches 2 --metrics-mode linear_pct99 --metrics-hi-pct 99.5 `
+  --tag smoke_e3
+
+
+# === Evaluate one LDR/HDR pair (visuals + metrics for that sample) ===
+python .\evaluate_pair.py ^
+  --ldr .\data\test\ldr\sample.png ^
+  --gt  .\data\test\hdr\sample.exr ^
+  --ckpt .\runs\YOUR_RUN\checkpoints\latest.pt ^
+  --outdir .\data\output\eval_sample ^
+  --tile 512 --overlap 128 ^
+  --exposure 1.0 --gamma 2.2
